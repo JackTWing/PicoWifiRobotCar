@@ -17,7 +17,7 @@ servo_left = servo.ContinuousServo(pwm_left)
 servo_right = servo.ContinuousServo(pwm_right)
 
 # Trim adjustments so the car actually drives straight-ish
-left_adjust = 0.0
+left_adjust = 0.075
 right_adjust = 0.075  # tweak as needed
 
 def move_servo(left_throttle, right_throttle):
@@ -46,8 +46,8 @@ def stop():
 # WiFi AP setup
 # =======================
 
-AP_SSID = "RobotCar"
-AP_PASSWORD = "PhysCompIsAwesome"  # must be at least 8 chars
+AP_SSID = "JTRobotCar"
+AP_PASSWORD = "JTPhysCompAswesomeness"  # must be at least 8 chars
 
 print("Starting WiFi access point...")
 wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
