@@ -4,9 +4,6 @@ WifiProtocolAPI.py contains functions for
 interactions between a CircuitPython Pico 
 with a wifi module and a connected computer.
 """
-# ======================
-# board functions:
-# ======================
 
 # Tested on a Raspberry Pi Pico 2 W with CircuitPython v 10.0.0
 # Runs its own WiFi access point and HTTP command server (insecure)
@@ -14,6 +11,20 @@ with a wifi module and a connected computer.
 import time, wifi, socketpool
 
 class WifiCommandServer():
+    """
+    Class encapsulating a WiFi command server for robotics and control applications.
+
+    Data:
+    - registry (dict): A mapping of HTTP paths to command handler functions.
+
+    Functions:
+    - start_wifi_ap(): Starts a WiFi access point with given SSID and password.
+    - start_http_server(): Starts a simple HTTP server on the WiFi AP.
+    - register_route(): Registers custom command handlers for specific HTTP paths.
+    - get_registry(): Returns the current command registry of paths and functions.
+    - handle_path(): Interprets HTTP paths and calls registered command handlers.
+    - listen_http_wireless(): Main loop that listens for HTTP requests and handles them.
+    """
 
     registry = {}
 
@@ -22,6 +33,10 @@ class WifiCommandServer():
 
     def start(self):
         self.listen_http_wireless(self.registry)
+
+    # =======================
+    # WiFi AP setup
+    # =======================
 
     def start_wifi_ap(self, network_name="Pi-Pico-Wifi", password="password"):
         """
@@ -110,6 +125,13 @@ class WifiCommandServer():
         """
         self.registry[path] = func
 
+    def get_registry(self):
+        """Returns the current command registry of paths and functions.
+        Returns:
+            dict: The current route registry.
+        """
+        return self.registry
+
     def handle_path(self, path):
         """
         Interpret the HTTP path using a registry of predefined commands mapped to paths.
@@ -136,75 +158,22 @@ class WifiCommandServer():
 
         return f"Unknown path: {path}"
 
-    def handle_path_old(path):
-        """
-        Interpret the HTTP path and perform the corresponding action.
-        Returns a short string describing the result.
-        This is the old hardcoded version before route_registry was added.
-        """
+    # =======================
+    # Full functionality loop:
+    # =======================
 
-        # Normalize by stripping query strings if present
-        if "?" in path:
-            path, _query = path.split("?", 1)
-
-        print("Requested path:", path)
-
-        # Root: show basic help
-        if path == "/" or path == "":
-            return (
-                "Robot Car HTTP Control (AP mode)\n"
-                "Commands:\n"
-                "  /forward\n"
-                "  /back\n"
-                "  /left\n"
-                "  /right\n"
-                "  /stop\n"
-                "  /sound/<name>\n"
-            )
-
-        # Movement commands
-        if path == "/stop":
-            stop()
-            return "stop"
-
-        elif path == "/forward":
-            move_servo(-1.0, -1.0)
-            return "forward"
-
-        elif path == "/back":
-            move_servo(1.0, 1.0)
-            return "back"
-
-        elif path == "/left":
-            move_servo(-0.5, 0.5)
-            return "left"
-
-        elif path == "/right":
-            move_servo(0.5, -0.5)
-            return "right"
-
-        # Sounds: /sound/<something>
-        elif path.startswith("/sound/"):
-            sound_name = path[len("/sound/"):]
-            # TODO: hook this into audio code if wanted
-            print("Sound requested:", sound_name)
-            # play_mp3(sound_name)  # if re-adding MP3 code
-            return f"sound:{sound_name}"
-
-        # Unknown path
-        return f"Unknown path: {path}"
-
-
-
-    def listen_http_wireless(self, registry):
+    def listen_http_wireless(self):
         """
         Main loop: listens for HTTP requests over WiFi AP
         and handles them.
+
+        Warning: This is a blocking function that runs indefinitely. The way to stop it is to reset or power off the board.
+        The outputs are function calls from the registered functions, which are defined by register_route().
         """
 
-        ap_ip = start_wifi_ap()
+        ap_ip = self.start_wifi_ap()
         time.sleep(1)  # give AP a moment to settle
-        server = start_http_server(ap_ip)
+        server = self.start_http_server(ap_ip)
 
         keepAlive = True
 
@@ -224,7 +193,7 @@ class WifiCommandServer():
                     request_str = request.decode("utf-8")
                 except UnicodeError:
                     print("Failed to decode request.")
-                    send_http_response(conn, 400, "Bad request encoding")
+                    self.send_http_response(conn, 400, "Bad request encoding")
                     conn.close()
                     continue
 
@@ -234,7 +203,7 @@ class WifiCommandServer():
 
                 parts = request_line.split(" ")
                 if len(parts) < 2:
-                    send_http_response(conn, 400, "Malformed request")
+                    self.send_http_response(conn, 400, "Malformed request")
                     conn.close()
                     continue
 
@@ -242,13 +211,13 @@ class WifiCommandServer():
                 path = parts[1]
 
                 if method != "GET":
-                    send_http_response(conn, 405, "Only GET supported")
+                    self.send_http_response(conn, 405, "Only GET supported at this time")
                     conn.close()
                     continue
 
                 # Handle the path
-                result_text = handle_path(path, registry)
-                send_http_response(conn, 200, result_text)
+                result_text = self.handle_path(path, self.registry)
+                self.send_http_response(conn, 200, result_text)
 
                 conn.close()
 
