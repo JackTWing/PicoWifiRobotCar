@@ -20,6 +20,8 @@ class WifiCommandServer():
     Functions:
     - start_wifi_ap(): Starts a WiFi access point with given SSID and password.
     - start_http_server(): Starts a simple HTTP server on the WiFi AP.
+    - stop_http_server(): Stops the HTTP server by setting keepAlive to False.
+    - send_http_response(): Sends a minimal HTTP response to a client.
     - register_route(): Registers custom command handlers for specific HTTP paths.
     - get_registry(): Returns the current command registry of paths and functions.
     - handle_path(): Interprets HTTP paths and calls registered command handlers.
@@ -27,9 +29,11 @@ class WifiCommandServer():
     """
 
     registry = {}
+    keepAlive = True
 
     def __init__(self, registry):
         self.registry = registry
+        self.keepAlive = True
 
     def start(self):
         self.listen_http_wireless(self.registry)
@@ -93,6 +97,10 @@ class WifiCommandServer():
 
         print(f"HTTP server listening on http://{ap_ip}:{PORT}/")
         return server
+    
+    def stop_http_server(self):
+        """Stops the HTTP server by setting keepAlive to False in the main server loop."""
+        self.keepAlive = False
 
 
     def send_http_response(self, conn, status_code=200, body="OK"):
@@ -175,9 +183,7 @@ class WifiCommandServer():
         time.sleep(1)  # give AP a moment to settle
         server = self.start_http_server(ap_ip)
 
-        keepAlive = True
-
-        while keepAlive:
+        while self.keepAlive:
             try:
                 print("Waiting for connection...")
                 conn, addr = server.accept()

@@ -7,3 +7,15 @@ To use the system:
 3. Run the script - you now have a robot running over an HTTP server!
 
 Built for Phyical Computing with Prof. Gallaugher at BC
+
+
+
+INSTRUCTIONS FOR LIBRARY CLIENT/SERVER SETUP:
+
+If using the PC client to send commands, add route entries for:
+- stop
+- forward
+- back
+- left
+- right
+using register_route(route, function)
