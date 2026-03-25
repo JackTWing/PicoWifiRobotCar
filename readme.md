@@ -30,7 +30,8 @@ The robot hosts its own WiFi Access Point (AP), listens for HTTP `GET` requests,
 - Routes support:
   - **exact paths** (`/forward`),
   - **prefix paths** (`/sound/anything`),
-  - **template paths** (`/speed/{value}`, `/arm/{joint}/{angle}`).
+  - **template paths** (`/speed/{value}`, `/arm/{joint}/{angle}`),
+  - **built-in status probes** (`/status`, `/heartbeat`) for quick connectivity checks.
 
 ### Computer-side client + dashboard
 - `RobotClient` sends HTTP paths (`send_path`, `send_segments`) from your computer to the Pico AP.
@@ -134,6 +135,12 @@ print(resp.status_code, resp.text)
 ---
 
 ## 3) Library API: `WifiCommandServer`
+
+### Connectivity probe endpoints
+`WifiCommandServer` provides lightweight built-ins that do not require route registration:
+
+- `GET /status` → compact JSON payload for UI connectivity checks (`ok`, `deadman_timeout_ms`, `last_cmd_seq`, `last_client_timestamp`, `uptime_ms`).
+- `GET /heartbeat` → plain `heartbeat` response and dead-man timer refresh.
 
 ### Minimal usage
 ```python

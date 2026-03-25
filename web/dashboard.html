@@ -13,6 +13,18 @@
   <main class="dashboard" aria-label="Robot dashboard">
     <header class="dashboard__header">
       <h1>Pico WiFi Robot Car</h1>
+      <section class="landing" aria-labelledby="landing-title">
+        <h2 id="landing-title">Connect phone to robot Wi‑Fi</h2>
+        <ol class="landing__steps">
+          <li>Open your phone Wi‑Fi settings and connect to the robot access point.</li>
+          <li>Return to this app and tap <strong>Retry connection</strong>.</li>
+          <li>Wait for status to show <strong>connected</strong> before driving.</li>
+        </ol>
+        <p class="landing__target">Expected robot host: <code id="robot-target">detecting…</code></p>
+        <button id="connect-retry" class="control control--retry" type="button">Retry connection</button>
+        <p class="diagnostics" id="diagnostics" aria-live="polite">Diagnostics: pending connectivity check.</p>
+      </section>
+
       <p class="status" id="status" role="status" aria-live="polite">Ready</p>
       <p class="connection" aria-live="polite">Connection: <span id="connection" data-state="reconnecting">reconnecting</span></p>
     </header>

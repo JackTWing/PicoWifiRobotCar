@@ -1,6 +1,9 @@
 const statusEl = document.getElementById("status");
 const speedEl = document.getElementById("speed");
 const connectionEl = document.getElementById("connection");
+const diagnosticsEl = document.getElementById("diagnostics");
+const robotTargetEl = document.getElementById("robot-target");
+const retryBtn = document.getElementById("connect-retry");
 
 const STREAM_INTERVAL_MS = 180;
 const IDLE_PING_INTERVAL_MS = 850;
@@ -15,9 +18,45 @@ let lastAckAt = 0;
 let reconnectingSince = 0;
 let lastSentSignature = "";
 
+const trimSlash = (value) => value.replace(/\/+$/, "");
+
+const getRobotBaseUrl = () => {
+  const params = new URLSearchParams(window.location.search);
+  const queryRobot = params.get("robot") || params.get("host") || params.get("robotHost");
+  if (queryRobot) {
+    const normalized = queryRobot.startsWith("http") ? queryRobot : `http://${queryRobot}`;
+    return trimSlash(normalized);
+  }
+
+  const stored = window.localStorage.getItem("robotBaseUrl");
+  if (stored) {
+    return trimSlash(stored);
+  }
+
+  const currentHost = window.location.hostname;
+  const privateIPv4Pattern = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/;
+  if (currentHost === "192.168.4.1" || privateIPv4Pattern.test(currentHost)) {
+    return trimSlash(window.location.origin);
+  }
+
+  return "http://192.168.4.1";
+};
+
+const ROBOT_BASE_URL = getRobotBaseUrl();
+window.localStorage.setItem("robotBaseUrl", ROBOT_BASE_URL);
+if (robotTargetEl) {
+  robotTargetEl.textContent = ROBOT_BASE_URL;
+}
+
 const updateStatus = (message) => {
   if (statusEl) {
     statusEl.textContent = message;
+  }
+};
+
+const updateDiagnostics = (message) => {
+  if (diagnosticsEl) {
+    diagnosticsEl.textContent = `Diagnostics: ${message}`;
   }
 };
 
@@ -32,9 +71,51 @@ const setConnectionState = (state) => {
 
 const nowTimestamp = () => Date.now();
 
-const encodeCmdPath = ({ cmd, speed, seq, timestamp }) => {
+const encodeCmdUrl = ({ cmd, speed, seq, timestamp }) => {
   const safeCmd = encodeURIComponent(cmd);
-  return `/cmd/${safeCmd}/${Math.round(speed)}/${seq}/${timestamp}`;
+  return `${ROBOT_BASE_URL}/cmd/${safeCmd}/${Math.round(speed)}/${seq}/${timestamp}`;
+};
+
+const probeConnectivity = async ({ updateUi = true } = {}) => {
+  const probeUrl = `${ROBOT_BASE_URL}/status?t=${Date.now()}`;
+
+  try {
+    const response = await fetch(probeUrl, { method: "GET", cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`status endpoint HTTP ${response.status}`);
+    }
+
+    const body = await response.text();
+    if (updateUi) {
+      setConnectionState("connected");
+      updateDiagnostics(`reachable (${body || "status ok"})`);
+      updateStatus("Robot link ready");
+    }
+
+    return true;
+  } catch (statusError) {
+    try {
+      const heartbeatUrl = `${ROBOT_BASE_URL}/heartbeat?t=${Date.now()}`;
+      const fallback = await fetch(heartbeatUrl, { method: "GET", cache: "no-store" });
+      if (!fallback.ok) {
+        throw new Error(`heartbeat HTTP ${fallback.status}`);
+      }
+
+      if (updateUi) {
+        setConnectionState("connected");
+        updateDiagnostics("reachable via /heartbeat (status endpoint unavailable)");
+        updateStatus("Robot link ready");
+      }
+      return true;
+    } catch (heartbeatError) {
+      if (updateUi) {
+        setConnectionState("offline");
+        updateDiagnostics(`cannot reach robot host ${ROBOT_BASE_URL} (${heartbeatError.message})`);
+        updateStatus("Waiting for robot connection");
+      }
+      return false;
+    }
+  }
 };
 
 const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) => {
@@ -51,11 +132,11 @@ const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) =
     return;
   }
 
-  const path = encodeCmdPath(packet);
+  const url = encodeCmdUrl(packet);
   seq += 1;
 
   try {
-    const response = await fetch(path, { method: "GET", cache: "no-store" });
+    const response = await fetch(url, { method: "GET", cache: "no-store" });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -64,6 +145,7 @@ const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) =
     reconnectingSince = 0;
     lastSentSignature = signature;
     setConnectionState("connected");
+    updateDiagnostics(`reachable at ${ROBOT_BASE_URL}`);
 
     if (!suppressStatus && cmd !== "heartbeat") {
       updateStatus(`Sent ${cmd} @ ${packet.speed}%`);
@@ -75,6 +157,7 @@ const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) =
     if (!isOffline && reconnectingSince === 0) {
       reconnectingSince = Date.now();
     }
+    updateDiagnostics(`cannot reach robot host ${ROBOT_BASE_URL} (${error.message})`);
     if (!suppressStatus) {
       updateStatus(`Command failed: ${error.message}`);
     }
@@ -181,6 +264,14 @@ for (const button of document.querySelectorAll("button[data-cmd]")) {
   }
 }
 
+if (retryBtn) {
+  retryBtn.addEventListener("click", () => {
+    updateStatus("Checking robot connectivity...");
+    updateDiagnostics(`probing ${ROBOT_BASE_URL}...`);
+    probeConnectivity({ updateUi: true });
+  });
+}
+
 if (speedEl) {
   speedEl.addEventListener("change", () => {
     sendPacket({ cmd: heldCmd || "speed", force: true });
@@ -198,11 +289,14 @@ document.addEventListener("visibilitychange", () => {
     return;
   }
 
+  probeConnectivity({ updateUi: true });
   sendPacket({ cmd: "heartbeat", suppressStatus: true, force: true });
 });
 window.addEventListener("pagehide", () => clearHold({ sendStop: true }));
 
 lastAckAt = Date.now();
 setConnectionState("reconnecting");
+updateDiagnostics(`probing ${ROBOT_BASE_URL}...`);
+probeConnectivity({ updateUi: true });
 sendPacket({ cmd: "heartbeat", suppressStatus: true, force: true });
 ensureIdlePing();

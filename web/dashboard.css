@@ -40,8 +40,48 @@ body {
   font-size: 1.2rem;
 }
 
+.landing {
+  margin-top: 0.85rem;
+  padding: 0.9rem;
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid #334155;
+}
+
+.landing h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.landing__steps {
+  margin: 0.6rem 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+}
+
+.landing__target {
+  margin: 0.5rem 0;
+  color: var(--text);
+}
+
+.landing code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-all;
+}
+
+.diagnostics {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.control--retry {
+  min-height: 40px;
+  margin-top: 0.25rem;
+}
+
 .status {
-  margin-top: 0.5rem;
+  margin-top: 0.65rem;
   color: var(--muted);
 }
 
