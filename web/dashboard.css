@@ -90,6 +90,16 @@ body {
   color: var(--muted);
 }
 
+.connection-warning {
+  margin-top: 0.75rem;
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  border: 2px solid var(--danger);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  color: #fecaca;
+  font-weight: 700;
+}
+
 #connection {
   font-weight: 700;
   text-transform: lowercase;
@@ -167,10 +177,41 @@ body {
   margin-bottom: 0.5rem;
 }
 
+.slider-caption {
+  margin: 0.2rem 0 0.9rem;
+  color: var(--muted);
+}
+
+.precision-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.95rem;
+  color: var(--text);
+}
+
 #speed {
   width: 100%;
   min-height: 48px;
+  margin-bottom: 0;
+}
+
+.telemetry {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  padding: 0.7rem;
   margin-bottom: 1rem;
+}
+
+.telemetry h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+}
+
+.telemetry__row {
+  margin: 0.2rem 0;
+  color: var(--muted);
 }
 
 .actions {

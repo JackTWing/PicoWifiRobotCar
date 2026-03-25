@@ -326,7 +326,15 @@ class WifiCommandServer():
         /cmd/{cmd}/{speed}/{seq}/{timestamp}
         """
         if seq <= self._last_cmd_seq:
-            return 200, "stale"
+            return 200, "stale_seq"
+
+        if timestamp < self._last_client_timestamp:
+            return 200, "stale_timestamp"
+
+        now_ms = int(time.monotonic() * 1000)
+        max_future_skew_ms = 15000
+        if timestamp > now_ms + max_future_skew_ms:
+            return 400, "invalid timestamp"
 
         self._last_cmd_seq = seq
         self._last_client_timestamp = timestamp
