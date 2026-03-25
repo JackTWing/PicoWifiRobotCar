@@ -5,6 +5,7 @@ This repository provides a full **robot-over-WiFi control stack** with three mai
 1. **Robot-side HTTP command server** (`WifiCommandServer`) that runs on a Pico W / Pico 2 W in CircuitPython.
 2. **Computer-side Python client** (`RobotClient`) for sending command paths to the robot.
 3. **Desktop dashboard** (`dashboard_app.py`) for configurable buttons/sliders + optional keyboard bindings.
+4. **Mobile-first web dashboard** (`web/dashboard.html`) with a two-zone touch layout for drive + secondary actions.
 
 ---
 
@@ -22,6 +23,7 @@ The robot hosts its own WiFi Access Point (AP), listens for HTTP `GET` requests,
 ### Computer-side client + dashboard
 - `RobotClient` sends HTTP paths (`send_path`, `send_segments`) from your computer to the Pico AP.
 - `dashboard_app.py` provides a Tkinter UI for adding controls at runtime and saving/loading JSON control layouts.
+- `web/dashboard.html` + `web/dashboard.css` + `web/dashboard.js` provide a responsive browser dashboard (mobile first, progressively enhanced for larger screens).
 
 ---
 
