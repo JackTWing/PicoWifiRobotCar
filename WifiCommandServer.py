@@ -8,6 +8,7 @@ with a wifi module and a connected computer.
 # Tested on a Raspberry Pi Pico 2 W with CircuitPython v 10.0.0
 # Runs its own WiFi access point and HTTP command server (insecure)
 
+import inspect
 import time, wifi, socketpool
 
 class WifiCommandServer():
@@ -33,7 +34,13 @@ class WifiCommandServer():
 
     def __init__(self, registry):
         self.registry = registry
+        self._route_templates = []
         self.keepAlive = True
+
+        # Index templates pre-loaded in the incoming registry.
+        for path, func in list(self.registry.items()):
+            if self._is_route_template(path):
+                self._route_templates.append((path, self._tokenize_template(path), func))
 
     def start(self):
         self.listen_http_wireless()
@@ -149,7 +156,130 @@ class WifiCommandServer():
         """
         if not isinstance(path, str) or not path.startswith("/"):
             raise ValueError("Route path must be a string starting with '/'.")
+
+        if self._is_route_template(path):
+            self._route_templates.append((path, self._tokenize_template(path), func))
+
         self.registry[path] = func
+
+    def _is_route_template(self, path):
+        return "{" in path and "}" in path
+
+    def _split_path_segments(self, path):
+        stripped = path.strip("/")
+        if stripped == "":
+            return []
+        return [segment for segment in stripped.split("/") if segment != ""]
+
+    def _tokenize_template(self, template):
+        tokens = []
+        for segment in self._split_path_segments(template):
+            if segment.startswith("{") and segment.endswith("}") and len(segment) > 2:
+                tokens.append(("param", segment[1:-1]))
+            else:
+                tokens.append(("literal", segment))
+        return tokens
+
+    def _coerce_path_value(self, value):
+        lower = value.lower()
+        if lower == "true":
+            return True
+        if lower == "false":
+            return False
+
+        try:
+            if value.startswith("0") and len(value) > 1 and value[1].isdigit():
+                raise ValueError
+            return int(value)
+        except ValueError:
+            pass
+
+        try:
+            return float(value)
+        except ValueError:
+            return value
+
+    def _coerce_value_to_type(self, value, expected_type):
+        if expected_type is inspect._empty or expected_type is str:
+            return value
+        if expected_type is bool:
+            lower = value.lower()
+            if lower == "true":
+                return True
+            if lower == "false":
+                return False
+            raise ValueError(f"expected bool, got '{value}'")
+        if expected_type is int:
+            return int(value)
+        if expected_type is float:
+            return float(value)
+        return self._coerce_path_value(value)
+
+    def _validate_handler_kwargs(self, handler, kwargs):
+        try:
+            signature = inspect.signature(handler)
+            signature.bind(**kwargs)
+            return True, None, signature
+        except TypeError as e:
+            message = str(e)
+            if "unexpected keyword argument" in message or "missing" in message:
+                return False, message, None
+            raise
+
+    def _match_template_route(self, path):
+        path_segments = self._split_path_segments(path)
+
+        for template, tokens, func in self._route_templates:
+            if len(tokens) != len(path_segments):
+                continue
+
+            kwargs = {}
+            matched = True
+            for idx, (token_type, token_value) in enumerate(tokens):
+                segment = path_segments[idx]
+
+                if token_type == "literal":
+                    if token_value != segment:
+                        matched = False
+                        break
+                    continue
+
+                if segment == "":
+                    return 400, f"Invalid parameter format for '{token_value}' in route {template}"
+
+                kwargs[token_value] = segment
+
+            if not matched:
+                continue
+
+            is_valid_kwargs, error_message, signature = self._validate_handler_kwargs(func, kwargs)
+            if not is_valid_kwargs:
+                return 400, f"Invalid parameter format for route {template}: {error_message}"
+
+            coerced_kwargs = {}
+            for name, raw_value in kwargs.items():
+                parameter = signature.parameters.get(name)
+                expected_type = parameter.annotation if parameter else inspect._empty
+                try:
+                    coerced_kwargs[name] = self._coerce_value_to_type(raw_value, expected_type)
+                except ValueError as e:
+                    return 400, f"Invalid parameter format for '{name}' in route {template}: {e}"
+
+            # Fallback coercion when no explicit type annotations are provided.
+            if all(
+                signature.parameters[name].annotation is inspect._empty
+                for name in coerced_kwargs
+                if name in signature.parameters
+            ):
+                for name in coerced_kwargs:
+                    coerced_kwargs[name] = self._coerce_path_value(kwargs[name])
+
+            try:
+                return 200, func(**coerced_kwargs)
+            except (ValueError, TypeError) as e:
+                return 400, f"Invalid parameter format for route {template}: {e}"
+
+        return None, None
 
     def get_registry(self):
         """Returns the current command registry of paths and functions.
@@ -164,7 +294,7 @@ class WifiCommandServer():
         Args:
             path (str): The HTTP path requested.
         Returns:
-            str: A short string describing the result.
+            tuple: (status_code, response_body)
         """
 
         # 1. Normalize path (strip query strings)
@@ -173,16 +303,21 @@ class WifiCommandServer():
         
         # 2. Check for exact matches in the registry
         if path in self.registry:
-            return self.registry[path]()
+            return 200, self.registry[path]()
 
-        # 3. Handle 'Prefix' matches (like your /sound/ example)
+        # 3. Check template routes with path parameters
+        template_status, template_result = self._match_template_route(path)
+        if template_status is not None:
+            return template_status, template_result
+
+        # 4. Handle 'Prefix' matches (like your /sound/ example)
         for prefix, func in self.registry.items():
             if prefix.endswith("/") and path.startswith(prefix):
                 # Pass the 'remainder' of the path as an argument to the function
                 arg = path[len(prefix):]
-                return func(arg)
+                return 200, func(arg)
 
-        return f"Unknown path: {path}"
+        return 200, f"Unknown path: {path}"
 
     # =======================
     # Full functionality loop:
@@ -228,8 +363,8 @@ class WifiCommandServer():
                     continue
 
                 # Handle the path
-                result_text = self.handle_path(path)
-                self.send_http_response(conn, 200, result_text)
+                status_code, result_text = self.handle_path(path)
+                self.send_http_response(conn, status_code, result_text)
 
                 conn.close()
 
