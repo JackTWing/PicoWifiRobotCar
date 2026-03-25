@@ -1,4 +1,4 @@
-# Jack Tommaney, Nov 2025 / Jan 2026
+# Jack Tommaney, Nov 2025 / Jan - March 2026
 """
 WifiProtocolAPI.py contains functions for 
 interactions between a CircuitPython Pico 

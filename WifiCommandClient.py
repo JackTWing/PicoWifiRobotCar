@@ -1,4 +1,4 @@
-# Jack Tommaney, Nov 2025 / Jan 2026
+# Jack Tommaney, Nov 2025 / Jan - March 2026
 """
 WifiCommandClient.py compatibility wrapper around the pico_wifi_robot package.
 """
