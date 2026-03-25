@@ -19,6 +19,14 @@ Offline behavior notes:
 - Live robot command endpoints (`/cmd/...`) are always fetched from network and are never cached.
 - If navigation happens while offline, `offline.html` is shown with a clear control-unavailable message.
 
+### Control safety defaults (web dashboard)
+
+- The dashboard starts with a **35% speed limiter** (conservative default) rather than full speed.
+- Optional **Precision mode** further reduces drive and turn command speed for close-quarters operation.
+- If `/status` includes telemetry values (for example battery and Wi‑Fi RSSI), the dashboard shows them in a live telemetry panel.
+- Compact `/cmd/{cmd}/{speed}/{seq}/{timestamp}` command packets are sequence/timestamp checked so stale or out-of-order packets are ignored.
+- If connection is lost, the UI raises a prominent warning and repeatedly attempts stop/heartbeat traffic; the robot dead-man timeout should still be configured as a final fallback.
+
 ---
 
 ## 1) Project Overview
@@ -131,6 +139,13 @@ client = RobotClient("http://192.168.4.1")
 resp = client.send_path("/forward")
 print(resp.status_code, resp.text)
 ```
+
+### Expected latency and safe operating range
+
+- **Expected control latency (phone/computer on robot AP, good signal):** ~80–220 ms end-to-end, with periodic command streaming around every 180 ms.
+- **Loss-of-link reaction target:** dead-man stop within about 1.5 seconds (default `deadman_timeout_ms=1500`) plus transport jitter.
+- **Practical safe operating range:** treat this setup as **short-range, line-of-sight** control. For typical Pico W AP use, operate conservatively within about **5–15 m (16–50 ft)** depending on interference, body blocking, and antenna orientation.
+- Always test in open space at reduced limiter settings first, and keep people/hands clear of wheels before reconnecting after an outage.
 
 ---
 

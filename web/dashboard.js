@@ -1,13 +1,22 @@
 const statusEl = document.getElementById("status");
 const speedEl = document.getElementById("speed");
+const speedValueEl = document.getElementById("speed-value");
+const precisionModeEl = document.getElementById("precision-mode");
 const connectionEl = document.getElementById("connection");
+const connectionWarningEl = document.getElementById("connection-warning");
 const diagnosticsEl = document.getElementById("diagnostics");
 const robotTargetEl = document.getElementById("robot-target");
 const retryBtn = document.getElementById("connect-retry");
+const batteryValueEl = document.getElementById("battery-value");
+const signalValueEl = document.getElementById("signal-value");
 
 const STREAM_INTERVAL_MS = 180;
 const IDLE_PING_INTERVAL_MS = 850;
 const OFFLINE_THRESHOLD_MS = 3000;
+const DEFAULT_SPEED_LIMIT = 35;
+const PRECISION_DRIVE_SCALE = 0.6;
+const PRECISION_TURN_SCALE = 0.45;
+const TURN_COMMANDS = new Set(["left", "right"]);
 
 let streamTimer = null;
 let idleTimer = null;
@@ -17,6 +26,7 @@ let seq = 0;
 let lastAckAt = 0;
 let reconnectingSince = 0;
 let lastSentSignature = "";
+let stopAttemptedSinceDisconnect = false;
 
 const trimSlash = (value) => value.replace(/\/+$/, "");
 
@@ -48,6 +58,10 @@ if (robotTargetEl) {
   robotTargetEl.textContent = ROBOT_BASE_URL;
 }
 
+if (speedEl) {
+  speedEl.value = String(DEFAULT_SPEED_LIMIT);
+}
+
 const updateStatus = (message) => {
   if (statusEl) {
     statusEl.textContent = message;
@@ -60,6 +74,55 @@ const updateDiagnostics = (message) => {
   }
 };
 
+const formatPct = (value) => {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return `${Math.round(value)}%`;
+};
+
+const updateTelemetry = (statusPayload) => {
+  if (!statusPayload || typeof statusPayload !== "object") {
+    return;
+  }
+
+  const battery =
+    statusPayload.battery_pct ??
+    statusPayload.battery_percent ??
+    statusPayload.battery ??
+    null;
+  const batteryVoltage = statusPayload.battery_v ?? statusPayload.battery_voltage ?? null;
+  const signalDbm = statusPayload.signal_dbm ?? statusPayload.rssi_dbm ?? statusPayload.wifi_rssi ?? null;
+  const signalPct = statusPayload.signal_pct ?? statusPayload.signal_percent ?? null;
+
+  if (batteryValueEl) {
+    const batteryPctText = formatPct(Number(battery));
+    if (batteryPctText) {
+      batteryValueEl.textContent = batteryPctText;
+    } else if (Number.isFinite(Number(batteryVoltage))) {
+      batteryValueEl.textContent = `${Number(batteryVoltage).toFixed(2)} V`;
+    } else {
+      batteryValueEl.textContent = "n/a";
+    }
+  }
+
+  if (signalValueEl) {
+    if (Number.isFinite(Number(signalDbm))) {
+      signalValueEl.textContent = `${Math.round(Number(signalDbm))} dBm`;
+    } else {
+      const signalPctText = formatPct(Number(signalPct));
+      signalValueEl.textContent = signalPctText || "n/a";
+    }
+  }
+};
+
+const showConnectionWarning = (visible) => {
+  if (!connectionWarningEl) {
+    return;
+  }
+  connectionWarningEl.hidden = !visible;
+};
+
 const setConnectionState = (state) => {
   if (!connectionEl) {
     return;
@@ -67,13 +130,47 @@ const setConnectionState = (state) => {
 
   connectionEl.dataset.state = state;
   connectionEl.textContent = state;
+  showConnectionWarning(state !== "connected");
+
+  if (state === "connected") {
+    stopAttemptedSinceDisconnect = false;
+    return;
+  }
+
+  if (!stopAttemptedSinceDisconnect) {
+    stopAttemptedSinceDisconnect = true;
+    sendPacket({ cmd: "stop", suppressStatus: true, force: true });
+  }
 };
 
 const nowTimestamp = () => Date.now();
 
-const encodeCmdUrl = ({ cmd, speed, seq, timestamp }) => {
+const encodeCmdUrl = ({ cmd, speed, seq: currentSeq, timestamp }) => {
   const safeCmd = encodeURIComponent(cmd);
-  return `${ROBOT_BASE_URL}/cmd/${safeCmd}/${Math.round(speed)}/${seq}/${timestamp}`;
+  return `${ROBOT_BASE_URL}/cmd/${safeCmd}/${Math.round(speed)}/${currentSeq}/${timestamp}`;
+};
+
+const getSpeedMultiplier = (cmd) => {
+  if (!precisionModeEl || !precisionModeEl.checked) {
+    return 1;
+  }
+  return TURN_COMMANDS.has(cmd) ? PRECISION_TURN_SCALE : PRECISION_DRIVE_SCALE;
+};
+
+const getEffectiveSpeed = (cmd) => {
+  const limiter = speedEl ? Number(speedEl.value) : DEFAULT_SPEED_LIMIT;
+  const safeLimiter = Number.isFinite(limiter) ? limiter : DEFAULT_SPEED_LIMIT;
+  return Math.max(0, Math.min(100, safeLimiter * getSpeedMultiplier(cmd)));
+};
+
+const refreshSpeedCaption = () => {
+  if (!speedValueEl || !speedEl) {
+    return;
+  }
+  const baseSpeed = Number(speedEl.value);
+  const effectiveSpeed = Math.round(getEffectiveSpeed(heldCmd || "forward"));
+  const precisionSuffix = precisionModeEl && precisionModeEl.checked ? ` • effective ${effectiveSpeed}%` : "";
+  speedValueEl.textContent = `${Math.round(baseSpeed)}%${precisionSuffix}`;
 };
 
 const probeConnectivity = async ({ updateUi = true } = {}) => {
@@ -86,6 +183,14 @@ const probeConnectivity = async ({ updateUi = true } = {}) => {
     }
 
     const body = await response.text();
+    let payload = null;
+    try {
+      payload = JSON.parse(body);
+    } catch (_err) {
+      payload = null;
+    }
+
+    updateTelemetry(payload);
     if (updateUi) {
       setConnectionState("connected");
       updateDiagnostics(`reachable (${body || "status ok"})`);
@@ -118,12 +223,11 @@ const probeConnectivity = async ({ updateUi = true } = {}) => {
   }
 };
 
-const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) => {
-  const currentSpeed = speedEl ? Number(speedEl.value) : 50;
+async function sendPacket({ cmd, suppressStatus = false, force = false } = {}) {
   const packet = {
     cmd,
-    speed: Number.isFinite(currentSpeed) ? currentSpeed : 50,
-    seq: seq,
+    speed: getEffectiveSpeed(cmd),
+    seq,
     timestamp: nowTimestamp(),
   };
 
@@ -148,7 +252,7 @@ const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) =
     updateDiagnostics(`reachable at ${ROBOT_BASE_URL}`);
 
     if (!suppressStatus && cmd !== "heartbeat") {
-      updateStatus(`Sent ${cmd} @ ${packet.speed}%`);
+      updateStatus(`Sent ${cmd} @ ${Math.round(packet.speed)}%`);
     }
   } catch (error) {
     const elapsedSinceAck = Date.now() - lastAckAt;
@@ -162,7 +266,7 @@ const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) =
       updateStatus(`Command failed: ${error.message}`);
     }
   }
-};
+}
 
 const clearHold = ({ sendStop = true } = {}) => {
   if (streamTimer !== null) {
@@ -172,6 +276,7 @@ const clearHold = ({ sendStop = true } = {}) => {
 
   heldCmd = null;
   activePointerId = null;
+  refreshSpeedCaption();
 
   if (sendStop) {
     sendPacket({ cmd: "stop", force: true });
@@ -197,6 +302,7 @@ const startCommandStream = (button, event) => {
 
   activePointerId = event.pointerId;
   heldCmd = cmd;
+  refreshSpeedCaption();
 
   if (typeof button.setPointerCapture === "function") {
     try {
@@ -273,7 +379,17 @@ if (retryBtn) {
 }
 
 if (speedEl) {
-  speedEl.addEventListener("change", () => {
+  const handleSpeedChange = () => {
+    refreshSpeedCaption();
+    sendPacket({ cmd: heldCmd || "speed", force: true });
+  };
+  speedEl.addEventListener("input", refreshSpeedCaption);
+  speedEl.addEventListener("change", handleSpeedChange);
+}
+
+if (precisionModeEl) {
+  precisionModeEl.addEventListener("change", () => {
+    refreshSpeedCaption();
     sendPacket({ cmd: heldCmd || "speed", force: true });
   });
 }
@@ -294,6 +410,7 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("pagehide", () => clearHold({ sendStop: true }));
 
+refreshSpeedCaption();
 lastAckAt = Date.now();
 setConnectionState("reconnecting");
 updateDiagnostics(`probing ${ROBOT_BASE_URL}...`);
