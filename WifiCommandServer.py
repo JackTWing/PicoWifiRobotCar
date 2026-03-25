@@ -40,6 +40,8 @@ class WifiCommandServer():
         self.deadman_stop_path = deadman_stop_path
         self._last_heartbeat_ms = time.monotonic() * 1000
         self._deadman_engaged = False
+        self._last_cmd_seq = -1
+        self._last_client_timestamp = 0
 
         # Index templates pre-loaded in the incoming registry.
         for path, func in list(self.registry.items()):
@@ -318,6 +320,53 @@ class WifiCommandServer():
         """
         return self.registry
 
+    def _apply_compact_command(self, cmd, speed, seq, timestamp):
+        """
+        Applies compact command packets sent from dashboard clients:
+        /cmd/{cmd}/{speed}/{seq}/{timestamp}
+        """
+        if seq <= self._last_cmd_seq:
+            return 200, "stale"
+
+        self._last_cmd_seq = seq
+        self._last_client_timestamp = timestamp
+        self._touch_heartbeat()
+
+        speed_handler = self.registry.get("/speed/{value}") or self.registry.get("/speed/")
+        if speed_handler is not None:
+            try:
+                speed_handler(speed)
+            except Exception as e:
+                return 400, f"speed error: {e}"
+
+        if cmd == "heartbeat":
+            return 200, "heartbeat"
+
+        command_path_map = {
+            "forward": "/forward",
+            "backward": "/backward",
+            "left": "/left",
+            "right": "/right",
+            "stop": "/stop",
+            "lights_toggle": "/lights/toggle",
+            "camera_toggle": "/camera/toggle",
+            "speed": None,
+        }
+        mapped_path = command_path_map.get(cmd)
+        if mapped_path is None and cmd != "speed":
+            return 400, f"unknown cmd: {cmd}"
+        if mapped_path is None:
+            return 200, "speed"
+
+        handler = self.registry.get(mapped_path)
+        if handler is None:
+            return 404, f"missing route: {mapped_path}"
+
+        try:
+            return 200, handler()
+        except Exception as e:
+            return 500, f"cmd error: {e}"
+
     def handle_path(self, path):
         """
         Interpret the HTTP path using a registry of predefined commands mapped to paths.
@@ -330,6 +379,20 @@ class WifiCommandServer():
         # 1. Normalize path (strip query strings)
         if "?" in path:
             path, _ = path.split("?", 1)
+
+        compact_prefix = "/cmd/"
+        if path.startswith(compact_prefix):
+            segments = self._split_path_segments(path)
+            if len(segments) != 5:
+                return 400, "compact command format: /cmd/{cmd}/{speed}/{seq}/{timestamp}"
+            _, cmd, speed_value, seq_value, timestamp_value = segments
+            try:
+                speed = int(speed_value)
+                seq = int(seq_value)
+                timestamp = int(timestamp_value)
+            except ValueError:
+                return 400, "compact command payload must be integers for speed/seq/timestamp"
+            return self._apply_compact_command(cmd, speed, seq, timestamp)
 
         if path == "/heartbeat":
             self._touch_heartbeat()

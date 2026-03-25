@@ -45,6 +45,28 @@ body {
   color: var(--muted);
 }
 
+.connection {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+#connection {
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+#connection[data-state="connected"] {
+  color: #34d399;
+}
+
+#connection[data-state="reconnecting"] {
+  color: #f59e0b;
+}
+
+#connection[data-state="offline"] {
+  color: var(--danger);
+}
+
 .zone {
   background: var(--panel);
   border-radius: 1rem;

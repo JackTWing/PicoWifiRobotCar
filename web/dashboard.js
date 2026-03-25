@@ -1,12 +1,19 @@
 const statusEl = document.getElementById("status");
 const speedEl = document.getElementById("speed");
+const connectionEl = document.getElementById("connection");
 
-const HOLD_INTERVAL_MS = 150;
-const HEARTBEAT_INTERVAL_MS = 500;
+const STREAM_INTERVAL_MS = 180;
+const IDLE_PING_INTERVAL_MS = 850;
+const OFFLINE_THRESHOLD_MS = 3000;
 
-let holdTimer = null;
-let heldPath = null;
+let streamTimer = null;
+let idleTimer = null;
+let heldCmd = null;
 let activePointerId = null;
+let seq = 0;
+let lastAckAt = 0;
+let reconnectingSince = 0;
+let lastSentSignature = "";
 
 const updateStatus = (message) => {
   if (statusEl) {
@@ -14,10 +21,38 @@ const updateStatus = (message) => {
   }
 };
 
-const sendCommand = async (path, { suppressStatus = false } = {}) => {
-  if (!suppressStatus) {
-    updateStatus(`Sending ${path}...`);
+const setConnectionState = (state) => {
+  if (!connectionEl) {
+    return;
   }
+
+  connectionEl.dataset.state = state;
+  connectionEl.textContent = state;
+};
+
+const nowTimestamp = () => Date.now();
+
+const encodeCmdPath = ({ cmd, speed, seq, timestamp }) => {
+  const safeCmd = encodeURIComponent(cmd);
+  return `/cmd/${safeCmd}/${Math.round(speed)}/${seq}/${timestamp}`;
+};
+
+const sendPacket = async ({ cmd, suppressStatus = false, force = false } = {}) => {
+  const currentSpeed = speedEl ? Number(speedEl.value) : 50;
+  const packet = {
+    cmd,
+    speed: Number.isFinite(currentSpeed) ? currentSpeed : 50,
+    seq: seq,
+    timestamp: nowTimestamp(),
+  };
+
+  const signature = `${packet.cmd}|${packet.speed}`;
+  if (!force && signature === lastSentSignature && cmd !== "heartbeat") {
+    return;
+  }
+
+  const path = encodeCmdPath(packet);
+  seq += 1;
 
   try {
     const response = await fetch(path, { method: "GET", cache: "no-store" });
@@ -25,31 +60,46 @@ const sendCommand = async (path, { suppressStatus = false } = {}) => {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    if (!suppressStatus) {
-      updateStatus(`Sent: ${path}`);
+    lastAckAt = Date.now();
+    reconnectingSince = 0;
+    lastSentSignature = signature;
+    setConnectionState("connected");
+
+    if (!suppressStatus && cmd !== "heartbeat") {
+      updateStatus(`Sent ${cmd} @ ${packet.speed}%`);
     }
   } catch (error) {
-    updateStatus(`Command failed: ${error.message}`);
+    const elapsedSinceAck = Date.now() - lastAckAt;
+    const isOffline = elapsedSinceAck >= OFFLINE_THRESHOLD_MS;
+    setConnectionState(isOffline ? "offline" : "reconnecting");
+    if (!isOffline && reconnectingSince === 0) {
+      reconnectingSince = Date.now();
+    }
+    if (!suppressStatus) {
+      updateStatus(`Command failed: ${error.message}`);
+    }
   }
 };
 
 const clearHold = ({ sendStop = true } = {}) => {
-  if (holdTimer !== null) {
-    window.clearInterval(holdTimer);
-    holdTimer = null;
+  if (streamTimer !== null) {
+    window.clearInterval(streamTimer);
+    streamTimer = null;
   }
 
-  heldPath = null;
+  heldCmd = null;
   activePointerId = null;
 
   if (sendStop) {
-    sendCommand("/stop");
+    sendPacket({ cmd: "stop", force: true });
   }
+
+  ensureIdlePing();
 };
 
-const startHold = (button, event) => {
-  const path = button.getAttribute("data-path");
-  if (!path) {
+const startCommandStream = (button, event) => {
+  const cmd = button.getAttribute("data-cmd");
+  if (!cmd) {
     return;
   }
 
@@ -63,7 +113,7 @@ const startHold = (button, event) => {
   }
 
   activePointerId = event.pointerId;
-  heldPath = path;
+  heldCmd = cmd;
 
   if (typeof button.setPointerCapture === "function") {
     try {
@@ -73,24 +123,43 @@ const startHold = (button, event) => {
     }
   }
 
-  sendCommand(path);
-
-  if (holdTimer !== null) {
-    window.clearInterval(holdTimer);
+  if (idleTimer !== null) {
+    window.clearInterval(idleTimer);
+    idleTimer = null;
   }
 
-  holdTimer = window.setInterval(() => {
-    if (heldPath) {
-      sendCommand(heldPath, { suppressStatus: true });
+  sendPacket({ cmd, force: true });
+
+  if (streamTimer !== null) {
+    window.clearInterval(streamTimer);
+  }
+
+  streamTimer = window.setInterval(() => {
+    if (heldCmd) {
+      sendPacket({ cmd: heldCmd, suppressStatus: true, force: true });
     }
-  }, HOLD_INTERVAL_MS);
+  }, STREAM_INTERVAL_MS);
 };
 
-for (const button of document.querySelectorAll("button[data-path]")) {
-  const isDriveButton = button.classList.contains("control--drive") && button.getAttribute("data-path") !== "/stop";
+const ensureIdlePing = () => {
+  if (idleTimer !== null) {
+    return;
+  }
+
+  idleTimer = window.setInterval(() => {
+    if (document.hidden || heldCmd) {
+      return;
+    }
+
+    sendPacket({ cmd: "heartbeat", suppressStatus: true, force: true });
+  }, IDLE_PING_INTERVAL_MS);
+};
+
+for (const button of document.querySelectorAll("button[data-cmd]")) {
+  const isDriveButton = button.classList.contains("control--drive") && button.getAttribute("data-cmd") !== "stop";
 
   if (isDriveButton) {
-    button.addEventListener("pointerdown", (event) => startHold(button, event));
+    button.addEventListener("pointerdown", (event) => startCommandStream(button, event));
     button.addEventListener("pointerup", () => clearHold({ sendStop: true }));
     button.addEventListener("pointercancel", () => clearHold({ sendStop: true }));
     button.addEventListener("pointerleave", (event) => {
@@ -104,9 +173,9 @@ for (const button of document.querySelectorAll("button[data-path]")) {
         return;
       }
       event.preventDefault();
-      const path = button.getAttribute("data-path");
-      if (path) {
-        sendCommand(path);
+      const cmd = button.getAttribute("data-cmd");
+      if (cmd) {
+        sendPacket({ cmd, force: true });
       }
     });
   }
@@ -114,7 +183,7 @@ for (const button of document.querySelectorAll("button[data-path]")) {
 
 if (speedEl) {
   speedEl.addEventListener("change", () => {
-    sendCommand(`/speed/${speedEl.value}`);
+    sendPacket({ cmd: heldCmd || "speed", force: true });
   });
 }
 
@@ -125,12 +194,15 @@ document.addEventListener("touchcancel", () => clearHold({ sendStop: true }), { 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     clearHold({ sendStop: true });
+    setConnectionState("offline");
+    return;
   }
+
+  sendPacket({ cmd: "heartbeat", suppressStatus: true, force: true });
 });
 window.addEventListener("pagehide", () => clearHold({ sendStop: true }));
 
-window.setInterval(() => {
-  if (!document.hidden) {
-    sendCommand("/heartbeat", { suppressStatus: true });
-  }
-}, HEARTBEAT_INTERVAL_MS);
+lastAckAt = Date.now();
+setConnectionState("reconnecting");
+sendPacket({ cmd: "heartbeat", suppressStatus: true, force: true });
+ensureIdlePing();
