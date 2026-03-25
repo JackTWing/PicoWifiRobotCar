@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Pico WiFi Robot Car icon">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <rect x="80" y="196" width="352" height="164" rx="28" fill="#22d3ee"/>
+  <circle cx="158" cy="392" r="42" fill="#94a3b8"/>
+  <circle cx="354" cy="392" r="42" fill="#94a3b8"/>
+  <circle cx="190" cy="270" r="24" fill="#001018"/>
+  <circle cx="322" cy="270" r="24" fill="#001018"/>
+  <path d="M256 64l56 56h-36v56h-40v-56h-36z" fill="#06b6d4"/>
+</svg>

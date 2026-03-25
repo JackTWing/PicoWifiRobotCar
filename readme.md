@@ -7,6 +7,18 @@ This repository provides a full **robot-over-WiFi control stack** with three mai
 3. **Desktop dashboard** (`dashboard_app.py`) for configurable buttons/sliders + optional keyboard bindings.
 4. **Mobile-first web dashboard** (`web/dashboard.html`) with a two-zone touch layout for drive + secondary actions.
 
+### Install as a mobile app (PWA)
+
+The web dashboard includes a web app manifest, service worker shell caching, and an offline fallback page.
+
+- **iOS Safari**: open `dashboard.html`, tap **Share** → **Add to Home Screen**.
+- **Android Chrome**: use the **Install app** banner when shown, or open the three-dot menu and choose **Install app** / **Add to Home screen**.
+
+Offline behavior notes:
+- Static shell assets (HTML/CSS/JS/icons/manifest) are cached for quicker startup.
+- Live robot command endpoints (`/cmd/...`) are always fetched from network and are never cached.
+- If navigation happens while offline, `offline.html` is shown with a clear control-unavailable message.
+
 ---
 
 ## 1) Project Overview

@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-192.svg">
   <title>Pico WiFi Robot Dashboard</title>
   <link rel="stylesheet" href="./dashboard.css">
 </head>
@@ -42,5 +45,12 @@
   <button class="control control--danger control--emergency" data-cmd="stop" aria-label="Emergency stop">Emergency Stop</button>
 
   <script src="./dashboard.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>

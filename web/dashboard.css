@@ -156,3 +156,12 @@ body {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
 }
+
+.zone--offline {
+  border: 2px solid var(--danger);
+}
+
+.zone--offline h1 {
+  margin-top: 0;
+  color: var(--danger);
+}
