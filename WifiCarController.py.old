@@ -1,0 +1,20 @@
+"""Legacy entrypoint preserved for older scripts."""
+
+from WifiCommandClient import (  # noqa: F401
+    ROBOT_BASE_URL,
+    active_keys,
+    compute_command,
+    on_press,
+    on_release,
+    send_command,
+)
+from pynput import keyboard
+
+
+if __name__ == "__main__":
+    print("WASD to drive the robot.")
+    print("SPACE = panic stop, ESC = quit.")
+    send_command("stop")
+
+    with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+        listener.join()
