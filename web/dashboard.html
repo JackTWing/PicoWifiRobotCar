@@ -11,16 +11,17 @@
     <header class="dashboard__header">
       <h1>Pico WiFi Robot Car</h1>
       <p class="status" id="status" role="status" aria-live="polite">Ready</p>
+      <p class="connection" aria-live="polite">Connection: <span id="connection" data-state="reconnecting">reconnecting</span></p>
     </header>
 
     <section class="zone zone--drive" aria-labelledby="drive-title">
       <h2 id="drive-title">Drive Controls</h2>
       <div class="dpad" role="group" aria-label="Directional pad">
-        <button class="control control--drive" data-path="/forward" aria-label="Drive forward">▲</button>
-        <button class="control control--drive" data-path="/left" aria-label="Turn left">◀</button>
-        <button class="control control--drive" data-path="/stop" aria-label="Stop">■</button>
-        <button class="control control--drive" data-path="/right" aria-label="Turn right">▶</button>
-        <button class="control control--drive" data-path="/backward" aria-label="Drive backward">▼</button>
+        <button class="control control--drive" data-cmd="forward" aria-label="Drive forward">▲</button>
+        <button class="control control--drive" data-cmd="left" aria-label="Turn left">◀</button>
+        <button class="control control--drive" data-cmd="stop" aria-label="Stop">■</button>
+        <button class="control control--drive" data-cmd="right" aria-label="Turn right">▶</button>
+        <button class="control control--drive" data-cmd="backward" aria-label="Drive backward">▼</button>
       </div>
     </section>
 
@@ -31,14 +32,14 @@
       <input id="speed" type="range" min="0" max="100" step="1" value="50" aria-label="Speed">
 
       <div class="actions" role="group" aria-label="Auxiliary controls">
-        <button class="control" data-path="/lights/toggle">Lights</button>
-        <button class="control" data-path="/camera/toggle">Camera</button>
+        <button class="control" data-cmd="lights_toggle">Lights</button>
+        <button class="control" data-cmd="camera_toggle">Camera</button>
       </div>
     </section>
   </main>
 
 
-  <button class="control control--danger control--emergency" data-path="/stop" aria-label="Emergency stop">Emergency Stop</button>
+  <button class="control control--danger control--emergency" data-cmd="stop" aria-label="Emergency stop">Emergency Stop</button>
 
   <script src="./dashboard.js"></script>
 </body>
