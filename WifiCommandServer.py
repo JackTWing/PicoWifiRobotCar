@@ -36,7 +36,7 @@ class WifiCommandServer():
         self.keepAlive = True
 
     def start(self):
-        self.listen_http_wireless(self.registry)
+        self.listen_http_wireless()
 
     # =======================
     # WiFi AP setup
@@ -116,13 +116,29 @@ class WifiCommandServer():
         )
         conn.send(response.encode("utf-8"))
 
-    # Jury-rigged DIY POST response handler for plaintext
-    def do_POST_RESPONSE(self, response_text):
-            # Send the response back to the client
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(response_text.encode())
+    def _parse_request_line(self, request_str):
+        """
+        Parse the HTTP request line and normalize method/path values.
+        Returns:
+            tuple: (method, path, status_code, error_message)
+        """
+        request_line = request_str.split("\r\n")[0]
+        print("Request line:", request_line)
+
+        parts = request_line.split(" ")
+        if len(parts) < 2:
+            return None, None, 400, "Malformed request"
+
+        method = parts[0].strip().upper()
+        path = parts[1].strip()
+
+        if not path.startswith("/"):
+            return None, None, 400, "Malformed request path"
+
+        if method != "GET":
+            return None, None, 405, "Only GET supported at this time"
+
+        return method, path, None, None
 
     def register_route(self, path, func):
         """Utility for developers to add their own commands.
@@ -131,6 +147,8 @@ class WifiCommandServer():
             path (str): The HTTP path to register (e.g., "/mycommand").
             func (callable): The function to call when this path is requested.
         """
+        if not isinstance(path, str) or not path.startswith("/"):
+            raise ValueError("Route path must be a string starting with '/'.")
         self.registry[path] = func
 
     def get_registry(self):
@@ -203,26 +221,14 @@ class WifiCommandServer():
                     conn.close()
                     continue
 
-                # First line: "GET /path HTTP/1.1"
-                request_line = request_str.split("\r\n")[0]
-                print("Request line:", request_line)
-
-                parts = request_line.split(" ")
-                if len(parts) < 2:
-                    self.send_http_response(conn, 400, "Malformed request")
-                    conn.close()
-                    continue
-
-                method = parts[0]
-                path = parts[1]
-
-                if method != "GET":
-                    self.send_http_response(conn, 405, "Only GET supported at this time")
+                method, path, status_code, error_message = self._parse_request_line(request_str)
+                if status_code is not None:
+                    self.send_http_response(conn, status_code, error_message)
                     conn.close()
                     continue
 
                 # Handle the path
-                result_text = self.handle_path(path, self.registry)
+                result_text = self.handle_path(path)
                 self.send_http_response(conn, 200, result_text)
 
                 conn.close()
