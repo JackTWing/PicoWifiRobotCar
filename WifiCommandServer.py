@@ -397,6 +397,17 @@ class WifiCommandServer():
         if path == "/heartbeat":
             self._touch_heartbeat()
             return 200, "heartbeat"
+
+        if path == "/status":
+            uptime_ms = int(time.monotonic() * 1000)
+            return 200, (
+                '{"ok":true,'
+                f'"deadman_timeout_ms":{int(self.deadman_timeout_ms)},'
+                f'"last_cmd_seq":{int(self._last_cmd_seq)},'
+                f'"last_client_timestamp":{int(self._last_client_timestamp)},'
+                f'"uptime_ms":{uptime_ms}'
+                '}'
+            )
         
         # 2. Check for exact matches in the registry
         if path in self.registry:
