@@ -32,10 +32,14 @@ class WifiCommandServer():
     registry = {}
     keepAlive = True
 
-    def __init__(self, registry):
+    def __init__(self, registry, deadman_timeout_ms=1500, deadman_stop_path="/stop"):
         self.registry = registry
         self._route_templates = []
         self.keepAlive = True
+        self.deadman_timeout_ms = deadman_timeout_ms
+        self.deadman_stop_path = deadman_stop_path
+        self._last_heartbeat_ms = time.monotonic() * 1000
+        self._deadman_engaged = False
 
         # Index templates pre-loaded in the incoming registry.
         for path, func in list(self.registry.items()):
@@ -100,7 +104,7 @@ class WifiCommandServer():
 
         server.bind((HOST, PORT))
         server.listen(1)
-        server.settimeout(None)  # blocking accept is fine here for most robotics applications
+        server.settimeout(0.1)
 
         print(f"HTTP server listening on http://{ap_ip}:{PORT}/")
         return server
@@ -108,6 +112,32 @@ class WifiCommandServer():
     def stop_http_server(self):
         """Stops the HTTP server by setting keepAlive to False in the main server loop."""
         self.keepAlive = False
+
+    def _touch_heartbeat(self):
+        self._last_heartbeat_ms = time.monotonic() * 1000
+        self._deadman_engaged = False
+
+    def _check_deadman(self):
+        if self.deadman_timeout_ms is None or self.deadman_timeout_ms <= 0:
+            return
+        if self._deadman_engaged:
+            return
+
+        now_ms = time.monotonic() * 1000
+        elapsed_ms = now_ms - self._last_heartbeat_ms
+        if elapsed_ms < self.deadman_timeout_ms:
+            return
+
+        stop_handler = self.registry.get(self.deadman_stop_path)
+        if stop_handler is None:
+            return
+
+        try:
+            stop_handler()
+            self._deadman_engaged = True
+            print("Dead-man timeout reached; stop handler invoked.")
+        except Exception as e:
+            print("Dead-man stop handler error:", e)
 
 
     def send_http_response(self, conn, status_code=200, body="OK"):
@@ -300,6 +330,10 @@ class WifiCommandServer():
         # 1. Normalize path (strip query strings)
         if "?" in path:
             path, _ = path.split("?", 1)
+
+        if path == "/heartbeat":
+            self._touch_heartbeat()
+            return 200, "heartbeat"
         
         # 2. Check for exact matches in the registry
         if path in self.registry:
@@ -369,7 +403,10 @@ class WifiCommandServer():
                 conn.close()
 
             except OSError as e:
+                self._check_deadman()
                 # Occasional WiFi/socket weirdness
+                if "timed out" in str(e).lower():
+                    continue
                 print("Socket error:", e)
                 try:
                     conn.close()
@@ -377,6 +414,7 @@ class WifiCommandServer():
                     pass
                 time.sleep(0.1)
             except Exception as e:
+                self._check_deadman()
                 print("General error:", e)
                 try:
                     conn.close()
