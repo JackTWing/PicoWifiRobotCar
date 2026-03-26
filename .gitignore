@@ -15,6 +15,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+!lib/
+!lib/wifi_command_server.py
+!lib/wifi_dashboard_assets.py
 lib64/
 parts/
 sdist/
